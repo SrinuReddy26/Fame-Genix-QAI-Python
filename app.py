@@ -5,9 +5,6 @@ import google.generativeai as genai
 import json
 import numpy as np
 from datetime import datetime
-import base64
-from PIL import Image
-import io
 import hashlib
 
 # ============================================
@@ -28,14 +25,11 @@ if "analysis_history" not in st.session_state:
     st.session_state.analysis_history = []
 if "current_analysis" not in st.session_state:
     st.session_state.current_analysis = None
-if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = []
 
 # ============================================
-# QUANTUM SIMULATOR (SIMPLIFIED & SAFE)
+# QUANTUM SIMULATOR (SAFE & LIGHTWEIGHT)
 # ============================================
 class QuantumSimulator:
-
     @staticmethod
     def run_full_analysis(input_text: str):
         text_hash = hashlib.md5(input_text.encode()).hexdigest()
@@ -43,54 +37,72 @@ class QuantumSimulator:
 
         confidence = round(np.mean(features), 3)
         entropy = float(-sum(f * np.log(f + 1e-10) for f in features))
-        uncertainty = 1 - confidence
+        uncertainty = round(1 - confidence, 3)
 
         return {
             "confidence_score": confidence,
-            "quantum_entropy": entropy,
+            "quantum_entropy": round(entropy, 3),
             "uncertainty_estimate": uncertainty,
             "quantum_correlations": round(np.std(features), 3)
         }
 
 # ============================================
-# AI HEALTH ANALYSIS (GEMINI)
+# AI HEALTH ANALYSIS (STABLE GEMINI)
 # ============================================
-def analyze_health(input_text, language, api_key, image_data=None):
+def analyze_health(input_text, language, api_key):
+
+    if not input_text or input_text.strip() == "":
+        return {
+            "diseaseName": "No input provided",
+            "symptoms": [],
+            "analysisSummary": ["Please enter symptoms for analysis."],
+            "riskPercentage": 0,
+            "riskDetails": {
+                "severity": "low",
+                "factors": [],
+                "explanation": "No symptoms were entered."
+            },
+            "foodSuggestions": [],
+            "doctorConsultationNeeded": False,
+            "recommendedDoctorType": ""
+        }
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+
+    # ✅ STABLE MODEL
+    model = genai.GenerativeModel("gemini-pro")
 
     prompt = f"""
 You are a medical AI assistant.
-Respond ONLY in valid JSON.
+Return ONLY valid JSON. Do not use markdown.
 
 Language: {language}
 
 JSON format:
 {{
-  "diseaseName": "",
-  "symptoms": [],
-  "analysisSummary": [],
-  "riskPercentage": 0,
+  "diseaseName": "string",
+  "symptoms": ["string"],
+  "analysisSummary": ["string"],
+  "riskPercentage": number,
   "riskDetails": {{
-    "severity": "low/moderate/high",
-    "factors": [],
-    "explanation": ""
+    "severity": "low or moderate or high",
+    "factors": ["string"],
+    "explanation": "string"
   }},
-  "foodSuggestions": [],
-  "doctorConsultationNeeded": true,
-  "recommendedDoctorType": ""
+  "foodSuggestions": ["string"],
+  "doctorConsultationNeeded": true or false,
+  "recommendedDoctorType": "string"
 }}
 
-Symptoms:
+User symptoms:
 {input_text}
 """
 
     response = model.generate_content(prompt)
     text = response.text.strip()
 
-    if "```" in text:
-        text = text.split("```")[1]
+    # Safety cleanup
+    text = text.replace("```json", "").replace("```", "").strip()
 
     return json.loads(text)
 
@@ -135,26 +147,13 @@ def dashboard():
     input_text = st.text_area(
         "Describe your symptoms",
         height=150,
-        placeholder="Example: fever, headache, fatigue"
+        placeholder="Example:\nSymptoms: fever, headache, fatigue\nDuration: 2 days\nAge: 22"
     )
-
-    uploaded = st.file_uploader(
-        "Upload image (optional)",
-        type=["png", "jpg", "jpeg"]
-    )
-
-    image_data = None
-    if uploaded:
-        image = Image.open(uploaded)
-        st.image(image, width=250)
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        image_data = base64.b64encode(buf.getvalue()).decode()
 
     if st.button("🔬 Analyze Health", type="primary"):
         with st.spinner("Analyzing..."):
             quantum = QuantumSimulator.run_full_analysis(input_text)
-            result = analyze_health(input_text, language, api_key, image_data)
+            result = analyze_health(input_text, language, api_key)
 
             result["quantumMetrics"] = quantum
             result["date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -180,32 +179,4 @@ def display_results(data):
     for s in data["symptoms"]:
         st.write("•", s)
 
-    st.subheader("Food Suggestions")
-    for f in data["foodSuggestions"]:
-        st.success(f)
-
-    st.subheader("Explanation")
-    st.write(data["riskDetails"]["explanation"])
-
-    qm = data["quantumMetrics"]
-    st.divider()
-    st.subheader("⚛️ Quantum Metrics")
-    st.json(qm)
-
-    st.warning(
-        "⚠️ This app is for informational purposes only. "
-        "Always consult a healthcare professional."
-    )
-
-# ============================================
-# MAIN
-# ============================================
-def main():
-    if st.session_state.authenticated:
-        dashboard()
-    else:
-        auth_page()
-
-if __name__ == "__main__":
-    main()
-
+    st.su
